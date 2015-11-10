@@ -98,10 +98,6 @@ defmodule Excellent.Parser do
     Dict.put(state, :collect, true)
   end
 
-  defp event({:startElement, _, 'f', _, _}, _, state) do
-    Dict.put(state, :type, "boolean")
-  end
-
   defp event({:endElement, _, 'v', _}, _, state) do
     Dict.put(state, :collect, false)
   end
