@@ -111,7 +111,7 @@ defmodule Excellent.Parser do
 
   defp event({:characters, chars}, _, %{ collect: true, type: type } = state) do
     value = to_string(chars) |> Type.from_string(%{type: type, lookup: state[:shared_strings]})
-    %{state | current_row: filler(state.prev_col, state.col) ++ [value | state[:current_row]]}
+    %{state | current_row:  [value | filler(state.prev_col, state.col) ++ state[:current_row]]}
   end
 
   defp event({:endElement, _, 'row', _}, _, state) do
