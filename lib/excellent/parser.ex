@@ -19,6 +19,10 @@ defmodule Excellent.Parser do
       event_state: %{
         shared_strings: shared_strings,
         styles: styles,
+        col: 0,
+        row: 0,
+        prev_col: 0,
+        prev_row: 0,
         content: []
       }
     )
@@ -76,18 +80,21 @@ defmodule Excellent.Parser do
   end
 
   defp event({:startElement, _, 'row', _, _}, _, state) do
-    Dict.put(state, :current_row, [])
+    Dict.merge(state, %{current_row: [], col: 0, prev_col: 0})
   end
 
-  defp event({:startElement, _, 'c', _, [_, {_, _, @shared_string_type, style}, {_, _, 't', type}]}, _, state) do
-    { style_int, _ } = Integer.parse(to_string(style))
+  defp event({:startElement, _, 'c', _, [{_, _, 'r', col_row}, {_, _, @shared_string_type, style},
+                                         {_, _, 't', type}]}, _, state) do
+    {col, row} = parse_col_row(col_row)
+    {style_int, _} = :string.to_integer(style)
     style_content = elem(state.styles, style_int)
     type = calculate_type(style_content, type)
-    Dict.put(state, :type, type)
+    Dict.merge(state, %{type: type, col: col, row: row, prev_col: state.col, prev_row: state.row})
   end
 
-  defp event({:startElement, _, 'c', _, [_, _, {_, _, 't', 's'}]}, _, state) do
-    Dict.put(state, :type, "string")
+  defp event({:startElement, _, 'c', _, [{_, _, 'r', col_row}, _, {_, _, 't', 's'}]}, _, state) do
+    {col, row} = parse_col_row(col_row)
+    Dict.merge(state, %{type: "string", col: col, row: row, prev_col: state.col, prev_row: state.row})
   end
 
   defp event({:endElement, _, 'c', _}, _, state) do
@@ -104,21 +111,31 @@ defmodule Excellent.Parser do
 
   defp event({:characters, chars}, _, %{ collect: true, type: type } = state) do
     value = to_string(chars) |> Type.from_string(%{type: type, lookup: state[:shared_strings]})
-
-    %{
-      state |
-      current_row: [value|state[:current_row]]
-    }
+    %{state | current_row: filler(state.prev_col, state.col) ++ [value | state[:current_row]]}
   end
 
   defp event({:endElement, _, 'row', _}, _, state) do
-    %{
-      state |
-      content: [Enum.reverse(state[:current_row])|state[:content]]
-    }
+    %{state | content: [Enum.reverse(state[:current_row]) | state[:content]], prev_col: 0}
   end
 
-  defp event(_, _, state) do
-    state
+  defp event(_, _, state),
+    do: state
+
+  defp filler(prev_col, col) do
+    Stream.repeatedly(fn -> nil end) |> Enum.take(col - prev_col - 1)
   end
+
+  defp parse_col_row(col_row),
+    do: parse_col_row([], [], col_row)
+  defp parse_col_row(col, row, []),
+    do: {dec_b26(col), :string.to_integer(row) |> elem(0)}
+  defp parse_col_row(col, row, [h|t]) when h in ?A..?Z,
+    do: parse_col_row(col ++ [h], row, t)
+  defp parse_col_row(col, row, [h|t]) when h in ?0..?9,
+    do: parse_col_row(col, row ++ [h], t)
+
+  defp dec_b26(digits) when is_list(digits), do: dec_b26(Enum.reverse(digits), 1, 0)
+  defp dec_b26([d | rest], m, acc), do: dec_b26(rest, m * 26, dec_b26_digit(d) * m + acc)
+  defp dec_b26([], _, acc), do: acc
+  defp dec_b26_digit(digit), do: digit - ?A + 1
 end
